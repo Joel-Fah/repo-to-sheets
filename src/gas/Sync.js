@@ -6,7 +6,29 @@
  * error goes in the Log's `errors` column and the run continues.
  */
 
+const SYNC_LOCK_WAIT_MS = 30000;
+
+/**
+ * Runs one sync under a script-wide lock, so a timer run and a "Sync now"
+ * click can't both read the Activity tab and append the same new row.
+ * @returns {{reposTotal: number, reposSynced: number, rowsUpserted: number, errors: string[]}}
+ */
 function syncAll() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(SYNC_LOCK_WAIT_MS)) {
+    throw new Error('Another sync is already running. Try again in a minute.');
+  }
+  try {
+    return runSync_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * @returns {{reposTotal: number, reposSynced: number, rowsUpserted: number, errors: string[]}}
+ */
+function runSync_() {
   const repos = getTrackedRepos(); // throws a clear error if Settings tab is missing/misconfigured
   const { githubToken } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
 
@@ -44,6 +66,7 @@ function syncAll() {
     rowsUpserted,
     errors: errors.join(' | ')
   });
+  return { reposTotal: repos.length, reposSynced, rowsUpserted, errors };
 }
 
 /**
