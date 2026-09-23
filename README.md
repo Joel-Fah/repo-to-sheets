@@ -16,6 +16,14 @@ phase — see `PHASE1_INSTRUCTIONS.md` through `PHASE4_INSTRUCTIONS.md`
 for the build sequence and `docs/decisions/` for why things are built
 the way they are.
 
+- ✅ **Phase 1 — Bootstrap:** Apps Script project linked via `clasp`.
+  `Repo Pulse → Sync now` and a 10-minute time-based trigger read the
+  **Settings** tab + Script Properties and write a run entry to the
+  **Log** tab. No GitHub or Gemini calls yet.
+- ⏳ Phase 2 — GitHub client & transformer
+- ⏳ Phase 3 — Sheet service & sync orchestration
+- ⏳ Phase 4 — Gemini summarization & demo polish
+
 ## How it works
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full data flow. Short
 version:
