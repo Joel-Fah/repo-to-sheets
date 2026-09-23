@@ -20,7 +20,10 @@ the way they are.
   `Repo Pulse → Sync now` and a 10-minute time-based trigger read the
   **Settings** tab + Script Properties and write a run entry to the
   **Log** tab. No GitHub or Gemini calls yet.
-- ⏳ Phase 2 — GitHub client & transformer
+- ✅ **Phase 2 — GitHub client & transformer:** issues and PRs are
+  fetched (paginated, rate-limit aware) and normalized into Activity rows,
+  fully unit tested. Not wired into the sync yet — see
+  [`docs/features/github-client.md`](./docs/features/github-client.md).
 - ⏳ Phase 3 — Sheet service & sync orchestration
 - ⏳ Phase 4 — Gemini summarization & demo polish
 
