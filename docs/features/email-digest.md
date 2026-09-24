@@ -124,6 +124,17 @@ including real fixture data, the all-quiet case, escaping, and the email-client 
 no scripts, balanced tables). The Apps Script glue and how the email looks in real clients are checked
 by hand.
 
+## Verified
+
+- **Unit tests** (see Testing) pass, and were mutation-checked: breaking the HTML escaping, the URL
+  allow-list, the stale threshold, the window cap, the recipient validation and the Gemini action cap
+  each makes a specific test fail.
+- **Real send:** the author ran **Repo Pulse → Send digest now** against the real Sheet, received the
+  email, and confirmed it works and looks as intended. That covers the whole path: Recipients tab,
+  Activity data, the Gemini call, `MailApp`, and the DigestLog row.
+- **Not individually confirmed:** rendering in Outlook or Apple Mail, and the scheduled trigger firing on
+  its own (installing it with `installDigestTrigger()` is optional).
+
 ## Known limits
 
 - No "New" section: rows carry no created date.

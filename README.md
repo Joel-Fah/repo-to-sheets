@@ -11,7 +11,7 @@ zero code using Google Sheets' Canvas feature.
 Built as the live demo for a talk at GitHub Dev Days #26, Yaoundé.
 
 ## Status
-✅ **Demo-ready.** All four build phases are done; the project now tracks
+✅ **Demo-ready.** All five build phases are done; the project now tracks
 itself, and `gdgyaounde/devfest-yaounde`, live.
 
 ![Activity Kanban board built with Google Sheets Canvas from the Activity tab: To Do, In Progress, Done and Merged columns, cards colored by priority](./docs/images/canvas-board.png)
@@ -38,7 +38,7 @@ cards colored by `priority`, 48 cards across two repos.*
   second model is tried if the first is overloaded. See
   [`docs/features/gemini-insights.md`](./docs/features/gemini-insights.md) and
   [`docs/features/canvas-board.md`](./docs/features/canvas-board.md).
-- 🚧 **Phase 5 — HTML email digest** (built and unit tested; real-inbox check pending): a designed daily (or on-demand) email of what shipped, what is in
+- ✅ **Phase 5 — HTML email digest:** a designed daily (or on-demand) email of what shipped, what is in
   motion and what needs attention, with recommended actions derived from the data, priority chips in the
   Kanban palette, and an "all quiet" version. **Repo Pulse → Send digest now** sends it on demand; recipients
   live in their own Recipients tab. See [`docs/features/email-digest.md`](./docs/features/email-digest.md).
