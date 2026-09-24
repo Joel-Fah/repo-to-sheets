@@ -30,7 +30,7 @@ function syncAll() {
  */
 function runSync_() {
   const repos = getTrackedRepos(); // throws a clear error if Settings tab is missing/misconfigured
-  const { githubToken } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
+  const { githubToken, geminiApiKey } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
 
   const fetchFn = (url, options) => UrlFetchApp.fetch(url, options);
   const rows = [];
@@ -53,11 +53,25 @@ function runSync_() {
   });
 
   let rowsUpserted = 0;
+  let upsert = null;
   try {
-    const result = upsertActivityRows(SpreadsheetApp.getActiveSpreadsheet(), ACTIVITY_TAB, rows);
-    rowsUpserted = result.added + result.updated;
+    upsert = upsertActivityRows(SpreadsheetApp.getActiveSpreadsheet(), ACTIVITY_TAB, rows);
+    rowsUpserted = upsert.added + upsert.updated;
   } catch (err) {
     errors.push(`${ACTIVITY_TAB} write: ${err.message}`);
+  }
+
+  // Summarize only when something changed: no point spending free-tier quota
+  // (or adding an Insights row) on a run that found nothing new. A Gemini
+  // failure is recorded but never fails the sync — the data is already written.
+  if (upsert && upsert.changes.length > 0) {
+    try {
+      const prompt = buildInsightPrompt(upsert.changes, rows, new Date());
+      const summary = summarizeActivity(fetchFn, geminiApiKey, prompt, { sleepFn: ms => Utilities.sleep(ms) });
+      writeInsightEntry_({ timestamp: new Date(), summary });
+    } catch (err) {
+      errors.push(`${INSIGHTS_TAB}: ${err.message}`);
+    }
   }
 
   writeLogEntry_({
@@ -67,6 +81,20 @@ function runSync_() {
     errors: errors.join(' | ')
   });
   return { reposTotal: repos.length, reposSynced, rowsUpserted, errors };
+}
+
+/**
+ * @param {{timestamp: Date, summary: string}} entry
+ */
+function writeInsightEntry_(entry) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(INSIGHTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(INSIGHTS_TAB);
+    sheet.appendRow(['timestamp', 'summary']);
+  }
+  // Model output is text we don't control: escape it so a leading "=", "-" etc. stays literal.
+  sheet.appendRow([entry.timestamp, escapeSheetText_(entry.summary)]);
 }
 
 /**
