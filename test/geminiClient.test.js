@@ -82,7 +82,7 @@ test('gives up after one retry on repeated 429s, reporting the status and messag
     response(429, { error: { message: 'Quota exceeded' } }),
     response(429, { error: { message: 'Quota exceeded' } })
   ]);
-  assert.throws(() => summarizeActivity(fetchFn, KEY, PROMPT), /HTTP 429.*Quota exceeded/);
+  assert.throws(() => summarizeActivity(fetchFn, KEY, PROMPT, { model: 'only-model' }), /HTTP 429.*Quota exceeded/);
   assert.equal(calls.length, 2);
 });
 
@@ -98,6 +98,76 @@ test('does not retry client errors, and the error never contains the key', () =>
     }
   );
   assert.equal(calls.length, 1);
+});
+
+// ---- fallback model ----
+
+test('falls back to the second model when the first stays overloaded, after its retry', () => {
+  const overloaded = () => response(503, { error: { message: 'high demand' } });
+  const { fetchFn, calls } = stubFetch([overloaded(), overloaded(), ok('From the fallback.')]);
+  const text = summarizeActivity(fetchFn, KEY, PROMPT, { models: ['primary', 'backup'] });
+
+  assert.equal(text, 'From the fallback.');
+  assert.deepEqual(calls.map(c => c.url.match(/models\/([^:]+):/)[1]), ['primary', 'primary', 'backup']);
+});
+
+test('a retired model (404) falls back immediately, without a retry', () => {
+  const { fetchFn, calls } = stubFetch([response(404, { error: { message: 'model not found' } }), ok('Backup answered.')]);
+  assert.equal(summarizeActivity(fetchFn, KEY, PROMPT, { models: ['gone', 'backup'] }), 'Backup answered.');
+  assert.equal(calls.length, 2);
+});
+
+test('a rate-limited first model (429) also falls back', () => {
+  const limited = () => response(429, { error: { message: 'quota' } });
+  const { fetchFn } = stubFetch([limited(), limited(), ok('Backup answered.')]);
+  assert.equal(summarizeActivity(fetchFn, KEY, PROMPT, { models: ['a', 'b'] }), 'Backup answered.');
+});
+
+test('a bad key (400/403) does not fall back: another model would fail the same way', () => {
+  const { fetchFn, calls } = stubFetch([response(403, { error: { message: 'API key invalid' } })]);
+  assert.throws(() => summarizeActivity(fetchFn, KEY, PROMPT, { models: ['a', 'b'] }), /HTTP 403/);
+  assert.equal(calls.length, 1);
+});
+
+test('a blocked prompt does not fall back', () => {
+  const { fetchFn, calls } = stubFetch([response(200, { promptFeedback: { blockReason: 'SAFETY' } })]);
+  assert.throws(() => summarizeActivity(fetchFn, KEY, PROMPT, { models: ['a', 'b'] }), /blocked/);
+  assert.equal(calls.length, 1);
+});
+
+test('when every model is unavailable the error names each one and never contains the key', () => {
+  const overloaded = () => response(503, { error: { message: 'high demand' } });
+  const { fetchFn, calls } = stubFetch([overloaded(), overloaded(), overloaded(), overloaded()]);
+  assert.throws(
+    () => summarizeActivity(fetchFn, KEY, PROMPT, { models: ['primary', 'backup'] }),
+    err => {
+      assert.match(err.message, /unavailable on every model/);
+      assert.match(err.message, /model primary/);
+      assert.match(err.message, /model backup/);
+      assert.ok(!err.message.includes(KEY));
+      return true;
+    }
+  );
+  assert.equal(calls.length, 4, 'two attempts per model');
+});
+
+test('by default two different models are configured, primary first', () => {
+  const overloaded = () => response(503, { error: { message: 'high demand' } });
+  const { fetchFn, calls } = stubFetch([overloaded(), overloaded(), ok('Default fallback worked.')]);
+  assert.equal(summarizeActivity(fetchFn, KEY, PROMPT), 'Default fallback worked.');
+  const used = calls.map(c => c.url.match(/models\/([^:]+):/)[1]);
+  assert.notEqual(used[0], used[2]);
+  assert.equal(used[0], used[1]);
+});
+
+test('the system instruction asks for owner/repo#number references and limited bold, and not for URLs', () => {
+  const { fetchFn, calls } = stubFetch([ok('Fine.')]);
+  summarizeActivity(fetchFn, KEY, PROMPT);
+  const instruction = JSON.parse(calls[0].options.payload).systemInstruction.parts[0].text;
+  assert.match(instruction, /owner\/repo#number/);
+  assert.match(instruction, /\*\*double asterisks\*\*/);
+  assert.match(instruction, /never invent/);
+  assert.ok(!/https?:\/\//i.test(instruction), 'the model is never asked to produce URLs');
 });
 
 test('an empty prompt throws before any request is made', () => {
