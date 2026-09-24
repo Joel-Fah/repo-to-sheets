@@ -24,7 +24,11 @@ the way they are.
   fetched (paginated, rate-limit aware) and normalized into Activity rows,
   fully unit tested. Not wired into the sync yet — see
   [`docs/features/github-client.md`](./docs/features/github-client.md).
-- ⏳ Phase 3 — Sheet service & sync orchestration
+- ✅ **Phase 3 — Sheet service & sync orchestration:** every repo in
+  Settings is fetched and upserted into the **Activity** tab (keyed on
+  `(repo, type, number)`, no duplicates on re-runs), each run is logged, and
+  one repo failing never stops the rest. See
+  [`docs/features/sheet-service.md`](./docs/features/sheet-service.md).
 - ⏳ Phase 4 — Gemini summarization & demo polish
 
 ## How it works

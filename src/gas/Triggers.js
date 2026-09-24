@@ -21,13 +21,14 @@ function installSyncTrigger() {
 }
 
 /**
- * Bound to the custom menu. Wraps syncAll() with user-facing feedback.
+ * Bound to the custom menu. Wraps syncAll() with user-facing feedback,
+ * including any per-repo errors (the same ones recorded in the Log tab).
  */
 function manualSyncNow() {
   const ui = SpreadsheetApp.getUi();
   try {
-    syncAll();
-    ui.alert('Repo Pulse', 'Sync complete.', ui.ButtonSet.OK);
+    const summary = syncAll();
+    ui.alert('Repo Pulse', formatSyncSummary(summary), ui.ButtonSet.OK);
   } catch (err) {
     ui.alert('Repo Pulse', `Sync failed: ${err.message}`, ui.ButtonSet.OK);
     throw err;
