@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/loadLib');
 
-const { formatSyncSummary } = loadLib('SyncSummary.js');
+const { formatSyncSummary, formatDigestResult } = loadLib('SyncSummary.js');
 
 const summary = overrides => ({ reposTotal: 2, reposSynced: 2, rowsUpserted: 46, errors: [], ...overrides });
 
@@ -39,4 +39,27 @@ test('a very long error message is truncated', () => {
   const text = formatSyncSummary(summary({ errors: ['x'.repeat(1000)] }));
   assert.ok(text.length < 500);
   assert.ok(text.includes('…'));
+});
+
+
+const digestResult = o => ({ subject: 'Repo Pulse · 4 shipped — Thu 24 Sep', recipients: ['a@x.com'], invalid: [], quiet: false, usedGemini: true, warnings: [], ...o });
+
+test('digest popup: who it went to and the subject', () => {
+  assert.equal(formatDigestResult(digestResult({ recipients: ['a@x.com', 'b@y.org'] })),
+    'Digest sent to a@x.com, b@y.org.\nSubject: Repo Pulse · 4 shipped — Thu 24 Sep');
+});
+
+test('digest popup: says so when it was the all-quiet version', () => {
+  assert.match(formatDigestResult(digestResult({ quiet: true, usedGemini: false })), /"all quiet" version/);
+  assert.ok(!formatDigestResult(digestResult({ quiet: true, usedGemini: false })).includes('derived from the data'), 'quiet sends make no Gemini call, so no warning about it');
+});
+
+test('digest popup: says when Gemini was not used', () => {
+  assert.match(formatDigestResult(digestResult({ usedGemini: false })), /derived from the data \(no Gemini summary this time\)/);
+});
+
+test('digest popup: lists skipped recipients and warnings', () => {
+  const text = formatDigestResult(digestResult({ invalid: ['nope', 'bad@'], warnings: ['Gemini: Gemini unavailable on every model: x'] }));
+  assert.match(text, /Skipped \(not valid emails\): nope, bad@/);
+  assert.match(text, /Note: Gemini: Gemini unavailable on every model: x/);
 });
