@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/loadLib');
 
-const { summarizeActivity } = loadLib('GeminiClient.js');
+const { summarizeActivity, generateDigestInsights } = loadLib('GeminiClient.js');
 
 const KEY = 'test-gemini-key-value';
 const PROMPT = 'Changes detected in this sync:\n- NEW issue #1 in o/r "Add thing"';
@@ -198,4 +198,92 @@ test('the system instruction limits references and marks imported history as not
   assert.match(instruction, /at most five items/);
   assert.match(instruction, /imported history/);
   assert.match(instruction, /never as shipped or new/);
+});
+
+// ---- generateDigestInsights: headline + recommended actions from ONE call ----
+
+const json = obj => ok(JSON.stringify(obj));
+
+test('digest insights: a single request returns both the summary and the actions', () => {
+  const { fetchFn, calls } = stubFetch([json({ summary: 'Five items shipped.', actions: ['Review o/r#4 first.', 'Label o/r#9.'] })]);
+  const result = generateDigestInsights(fetchFn, KEY, 'digest data');
+
+  assert.deepEqual(result, { summary: 'Five items shipped.', actions: ['Review o/r#4 first.', 'Label o/r#9.'] });
+  assert.equal(calls.length, 1, 'one call, not one per output');
+});
+
+test('digest insights: asks for JSON, keeps the key out of the URL and body, and sends the data block', () => {
+  const { fetchFn, calls } = stubFetch([json({ summary: 's', actions: [] })]);
+  generateDigestInsights(fetchFn, KEY, 'the data block');
+  const { url, options } = calls[0];
+  const body = JSON.parse(options.payload);
+
+  assert.match(url, /:generateContent$/);
+  assert.equal(options.headers['x-goog-api-key'], KEY);
+  assert.ok(!url.includes(KEY) && !options.payload.includes(KEY));
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.equal(body.contents[0].parts[0].text, 'the data block');
+  assert.match(body.systemInstruction.parts[0].text, /"summary".*"actions"/);
+  assert.match(body.systemInstruction.parts[0].text, /2 to 4 short, concrete recommended actions/);
+  assert.match(body.systemInstruction.parts[0].text, /never invent/);
+});
+
+test('digest insights: the existing summary call is unaffected (same instruction, no JSON mode)', () => {
+  const { fetchFn, calls } = stubFetch([ok('A plain summary.')]);
+  assert.equal(summarizeActivity(fetchFn, KEY, PROMPT), 'A plain summary.');
+  const body = JSON.parse(calls[0].options.payload);
+  assert.equal(body.generationConfig.responseMimeType, undefined);
+  assert.match(body.systemInstruction.parts[0].text, /2 to 4 plain sentences/);
+});
+
+test('digest insights: tolerates a code fence around the JSON', () => {
+  const { fetchFn } = stubFetch([ok('```json\n{"summary": "Fenced.", "actions": ["One.", "Two."]}\n```')]);
+  assert.deepEqual(generateDigestInsights(fetchFn, KEY, 'd'), { summary: 'Fenced.', actions: ['One.', 'Two.'] });
+});
+
+test('digest insights: at most 4 actions, non-strings dropped, long ones trimmed, whitespace collapsed', () => {
+  const { fetchFn } = stubFetch([json({
+    summary: '  Spaced\n out.  ',
+    actions: ['a', 5, '  ', 'b   b', 'c', 'd', 'e', 'x'.repeat(500)]
+  })]);
+  const result = generateDigestInsights(fetchFn, KEY, 'd');
+  assert.equal(result.summary, 'Spaced out.');
+  assert.deepEqual(result.actions, ['a', 'b b', 'c', 'd']);
+
+  const { fetchFn: f2 } = stubFetch([json({ summary: '', actions: ['x'.repeat(500)] })]);
+  assert.equal(generateDigestInsights(f2, KEY, 'd').actions[0].length, 240);
+});
+
+test('digest insights: a summary alone or actions alone is usable', () => {
+  assert.deepEqual(generateDigestInsights(stubFetch([json({ summary: 'Only.' })]).fetchFn, KEY, 'd'), { summary: 'Only.', actions: [] });
+  assert.deepEqual(generateDigestInsights(stubFetch([json({ actions: ['Just this.'] })]).fetchFn, KEY, 'd'), { summary: '', actions: ['Just this.'] });
+});
+
+test('digest insights: non-JSON, wrong shape, or nothing usable is an error the caller can fall back from', () => {
+  assert.throws(() => generateDigestInsights(stubFetch([ok('Sure! Here are some actions.')]).fetchFn, KEY, 'd'), /did not return valid JSON/);
+  assert.throws(() => generateDigestInsights(stubFetch([json([1, 2])]).fetchFn, KEY, 'd'), /no usable digest content/);
+  assert.throws(() => generateDigestInsights(stubFetch([json({ summary: 5, actions: 'no' })]).fetchFn, KEY, 'd'), /no usable digest content/);
+});
+
+test('digest insights: same retry and model fallback as the summary call', () => {
+  const overloaded = () => response(503, { error: { message: 'high demand' } });
+  const { fetchFn, calls } = stubFetch([overloaded(), overloaded(), json({ summary: 'From backup.', actions: ['A.', 'B.'] })]);
+  const result = generateDigestInsights(fetchFn, KEY, 'd', { models: ['primary', 'backup'] });
+  assert.equal(result.summary, 'From backup.');
+  assert.deepEqual(calls.map(c => c.url.match(/models\/([^:]+):/)[1]), ['primary', 'primary', 'backup']);
+});
+
+test('digest insights: every model down gives one error naming each, without the key', () => {
+  const overloaded = () => response(503, { error: { message: 'high demand' } });
+  const { fetchFn } = stubFetch([overloaded(), overloaded(), overloaded(), overloaded()]);
+  assert.throws(
+    () => generateDigestInsights(fetchFn, KEY, 'd', { models: ['a', 'b'] }),
+    err => /unavailable on every model/.test(err.message) && !err.message.includes(KEY)
+  );
+});
+
+test('digest insights: an empty data block throws before any request', () => {
+  const { fetchFn, calls } = stubFetch([]);
+  assert.throws(() => generateDigestInsights(fetchFn, KEY, '  '), /nothing to summarize/);
+  assert.equal(calls.length, 0);
 });
