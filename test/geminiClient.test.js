@@ -190,3 +190,12 @@ test('a non-JSON error body still yields a readable error', () => {
   const { fetchFn } = stubFetch([response(403, '<html>Forbidden</html>')]);
   assert.throws(() => summarizeActivity(fetchFn, KEY, PROMPT), /HTTP 403.*no error message/);
 });
+
+test('the system instruction limits references and marks imported history as not new work', () => {
+  const { fetchFn, calls } = stubFetch([ok('Fine.')]);
+  summarizeActivity(fetchFn, KEY, PROMPT);
+  const instruction = JSON.parse(calls[0].options.payload).systemInstruction.parts[0].text;
+  assert.match(instruction, /at most five items/);
+  assert.match(instruction, /imported history/);
+  assert.match(instruction, /never as shipped or new/);
+});

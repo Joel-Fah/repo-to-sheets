@@ -127,3 +127,63 @@ test('end to end with real fixtures: changes from a real upsert plan become prom
   assert.match(prompt, /UPDATED issue Joel-Fah\/repo-to-sheets#3 "Implement GitHubClient \+ Transformer": state: open -> closed; status: in-progress -> done/);
   assert.equal(second.changes.length, 1);
 });
+
+// ---- backfill: rows that are new to the sheet but old on GitHub ----
+
+const SINCE = new Date('2026-09-24T07:55:00Z');
+
+test('an added row last updated before the previous sync is history, reported as a count, not as NEW', () => {
+  const oldRow = makeRow({ number: 9, updatedAt: '2026-09-01T00:00:00Z' });
+  const freshRow = makeRow({ number: 10, updatedAt: '2026-09-24T08:00:00Z' });
+  const prompt = buildInsightPrompt([added(oldRow), added(freshRow)], [], NOW, SINCE);
+
+  assert.ok(prompt.includes('- NEW issue Joel-Fah/repo-to-sheets#10'));
+  assert.ok(!prompt.includes('#9 '), 'the old row is not listed individually');
+  assert.match(prompt, /Existing items newly imported into the sheet \(history, not new activity\):\n- 1 item\(s\) from Joel-Fah\/repo-to-sheets/);
+});
+
+test('an updated row is always news, however old the item is', () => {
+  const before = makeRow({ updatedAt: '2026-01-01T00:00:00Z', priority: 'high' });
+  const now = makeRow({ updatedAt: '2026-01-01T00:00:00Z', priority: 'low' });
+  const prompt = buildInsightPrompt([updated(before, now)], [], NOW, SINCE);
+  assert.match(prompt, /UPDATED issue .*priority: high -> low/);
+  assert.ok(!prompt.includes('newly imported'));
+});
+
+test('the previous-sync cutoff has a 2 minute skew allowance', () => {
+  const inside = makeRow({ number: 1, updatedAt: '2026-09-24T07:53:30Z' }); // 1.5 min before SINCE
+  const outside = makeRow({ number: 2, updatedAt: '2026-09-24T07:52:30Z' }); // 2.5 min before SINCE
+  const prompt = buildInsightPrompt([added(inside), added(outside)], [], NOW, SINCE);
+  assert.ok(prompt.includes('#1 '));
+  assert.ok(!prompt.includes('#2 '));
+  assert.match(prompt, /- 1 item\(s\) from/);
+});
+
+test('only imported history still yields a prompt, with "none" under changes', () => {
+  const prompt = buildInsightPrompt([added(makeRow({ updatedAt: '2026-09-01T00:00:00Z' }))], [], NOW, SINCE);
+  assert.ok(prompt.startsWith('Changes detected in this sync:\n- none\n'));
+  assert.ok(prompt.includes('newly imported into the sheet'));
+});
+
+test('imported history is counted per repo', () => {
+  const rows = [
+    ...Array.from({ length: 3 }, (_, i) => makeRow({ repo: 'a/one', number: i + 1, updatedAt: '2026-08-01T00:00:00Z' })),
+    makeRow({ repo: 'b/two', number: 1, updatedAt: '2026-08-01T00:00:00Z' })
+  ];
+  const prompt = buildInsightPrompt(rows.map(added), [], NOW, SINCE);
+  assert.ok(prompt.includes('- 3 item(s) from a/one'));
+  assert.ok(prompt.includes('- 1 item(s) from b/two'));
+});
+
+test('a repo moved to a new owner: 41 old rows plus 2 real relabels reads as 2 updates and one import line', () => {
+  const imported = Array.from({ length: 41 }, (_, i) =>
+    added(makeRow({ repo: 'gdgyaounde/devfest-yaounde', type: 'pr', number: i + 1, updatedAt: '2026-09-15T00:00:00Z' })));
+  const relabels = [4, 7].map(n => updated(makeRow({ number: n, priority: 'high' }), makeRow({ number: n, priority: 'low', updatedAt: '2026-09-24T07:59:00Z' })));
+  const prompt = buildInsightPrompt([...imported, ...relabels], [], NOW, SINCE);
+
+  const lines = prompt.split('\n');
+  assert.equal(lines.filter(l => l.startsWith('- UPDATED')).length, 2);
+  assert.equal(lines.filter(l => l.startsWith('- NEW')).length, 0);
+  assert.ok(lines.includes('- 41 item(s) from gdgyaounde/devfest-yaounde'));
+  assert.ok(prompt.length < 1200, 'the prompt stays compact');
+});

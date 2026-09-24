@@ -9,20 +9,31 @@ const INSIGHT_MAX_STALE = 10;
 const INSIGHT_STALE_DAYS = 14;
 const INSIGHT_MAX_TITLE_LENGTH = 100;
 const INSIGHT_DIFF_FIELDS = ['title', 'state', 'status', 'priority', 'assignee'];
+const INSIGHT_SINCE_MARGIN_MS = 2 * 60 * 1000; // clock skew allowance between GitHub and Apps Script
 
 /**
  * @param {ActivityChange[]} changes - rows added or changed by this sync (from upsertActivityRows)
  * @param {object[]} currentRows - normalized rows fetched in this sync, used to spot stale open items
  * @param {Date} now
+ * @param {Date} [since] - time of the previous sync. An added row last updated before this is existing
+ *   history being imported (e.g. a newly tracked repo), not new activity, and is reported as a count.
+ *   When omitted, every added row is treated as new.
  * @returns {string} prompt text; '' when there are no changes (nothing to summarize)
  */
-function buildInsightPrompt(changes, currentRows, now) {
+function buildInsightPrompt(changes, currentRows, now, since) {
   if (!changes || changes.length === 0) return '';
 
+  const { news, backfill } = partitionChanges_(changes, since);
   const lines = ['Changes detected in this sync:'];
-  changes.slice(0, INSIGHT_MAX_CHANGES).forEach(change => lines.push(`- ${describeChange_(change)}`));
-  if (changes.length > INSIGHT_MAX_CHANGES) {
-    lines.push(`- ...and ${changes.length - INSIGHT_MAX_CHANGES} more changes not listed`);
+  if (news.length === 0) lines.push('- none');
+  news.slice(0, INSIGHT_MAX_CHANGES).forEach(change => lines.push(`- ${describeChange_(change)}`));
+  if (news.length > INSIGHT_MAX_CHANGES) {
+    lines.push(`- ...and ${news.length - INSIGHT_MAX_CHANGES} more changes not listed`);
+  }
+
+  if (backfill.length > 0) {
+    lines.push('', 'Existing items newly imported into the sheet (history, not new activity):');
+    countByRepo_(backfill).forEach(([repo, count]) => lines.push(`- ${count} item(s) from ${repo}`));
   }
 
   // Always state this section: if it were omitted when empty, the model could only guess whether "nothing stale" was true.
@@ -35,6 +46,33 @@ function buildInsightPrompt(changes, currentRows, now) {
     if (stale.length > INSIGHT_MAX_STALE) lines.push(`- ...and ${stale.length - INSIGHT_MAX_STALE} more`);
   }
   return lines.join('\n');
+}
+
+/**
+ * @param {ActivityChange[]} changes
+ * @param {Date} [since]
+ * @returns {{news: ActivityChange[], backfill: ActivityChange[]}} backfill = added rows older than the previous sync
+ */
+function partitionChanges_(changes, since) {
+  if (!since) return { news: changes, backfill: [] };
+  const cutoff = since.getTime() - INSIGHT_SINCE_MARGIN_MS;
+  const news = [];
+  const backfill = [];
+  changes.forEach(change => {
+    const isHistory = change.kind === 'added' && !(new Date(change.row.updatedAt).getTime() >= cutoff);
+    (isHistory ? backfill : news).push(change);
+  });
+  return { news, backfill };
+}
+
+/**
+ * @param {ActivityChange[]} changes
+ * @returns {[string, number][]} [repo, count] pairs, in first-seen order
+ */
+function countByRepo_(changes) {
+  const counts = new Map();
+  changes.forEach(change => counts.set(change.row.repo, (counts.get(change.row.repo) || 0) + 1));
+  return Array.from(counts.entries());
 }
 
 /**
