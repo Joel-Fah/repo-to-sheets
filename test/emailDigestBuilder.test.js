@@ -276,3 +276,10 @@ test('no rows at all still produces a valid all-quiet email', () => {
   assert.ok(htmlBody.includes('Open the dashboard'));
   assert.ok(plainTextBody.includes('ALL QUIET.'));
 });
+
+test('the footer points at the Recipients tab in both the HTML and the plain text', () => {
+  const { htmlBody, plainTextBody } = buildDigestHtml(fixtureRows(), [], makeMeta());
+  assert.ok(htmlBody.includes("managed in the sheet's <em>Recipients</em> tab"));
+  assert.ok(plainTextBody.includes('Recipients are managed in the Recipients tab.'));
+  assert.ok(!htmlBody.includes('Settings tab') && !plainTextBody.includes('Settings tab'), 'no stale mention of the old location');
+});

@@ -392,7 +392,7 @@ function digestCallToAction_(context) {
 function digestFooter_(context) {
   const how = context.meta.mode === 'manual' ? 'sent on demand from the sheet menu' : 'sent daily';
   return `<tr><td bgcolor="${DIGEST_COLORS.soft}" style="background-color:${DIGEST_COLORS.soft};padding:22px 28px;margin-top:24px;border-top:1px solid ${DIGEST_COLORS.line};border-radius:0 0 14px 14px;">
-<div style="font-family:${DIGEST_FONT};font-size:12px;line-height:1.6;color:${DIGEST_COLORS.muted};"><strong style="color:${DIGEST_COLORS.text};">Repo Pulse</strong> ${how}. Recipients are the <em>recipients</em> row in the sheet's Settings tab; this digest covers activity since ${digestEsc_(context.meta.sinceLabel)}.</div>
+<div style="font-family:${DIGEST_FONT};font-size:12px;line-height:1.6;color:${DIGEST_COLORS.muted};"><strong style="color:${DIGEST_COLORS.text};">Repo Pulse</strong> ${how}. Recipients are managed in the sheet's <em>Recipients</em> tab; this digest covers activity since ${digestEsc_(context.meta.sinceLabel)}.</div>
 </td></tr>`;
 }
 
@@ -479,7 +479,7 @@ function digestPlainText_(context) {
   addSection('Needs attention', selection.attention, true, context.quiet ? DIGEST_QUIET_MAX_ATTENTION : DIGEST_MAX_ITEMS_PER_SECTION);
 
   if (digestSafeUrl_(meta.sheetUrl)) lines.push(`Open the dashboard: ${meta.sheetUrl}`, '');
-  lines.push(`Repo Pulse ${meta.mode === 'manual' ? 'sent on demand from the sheet menu' : 'sent daily'}. Recipients are set in the Settings tab.`);
+  lines.push(`Repo Pulse ${meta.mode === 'manual' ? 'sent on demand from the sheet menu' : 'sent daily'}. Recipients are managed in the Recipients tab.`);
   return lines.join('\n');
 }
 

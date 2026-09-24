@@ -55,9 +55,13 @@ function sendDigest_(mode) {
  * @returns {DigestResult}
  */
 function runDigest_(mode) {
-  const { valid: recipients, invalid } = parseRecipients(getDigestRecipientsText());
+  const { recipients: people, invalid } = parseRecipientRows(readRecipientRows_());
+  const recipients = people.map(person => person.email);
   if (recipients.length === 0) {
-    throw new Error(`No recipients. Add a row to the ${SETTINGS_TAB} tab: recipients | you@example.com, teammate@example.com`);
+    throw new Error(
+      `No enabled recipients. Add a row to the ${RECIPIENTS_TAB} tab: name | email | enabled (TRUE).` +
+      (invalid.length > 0 ? ` Skipped: ${invalid.join('; ')}` : '')
+    );
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -116,6 +120,22 @@ function runDigest_(mode) {
   writeDigestLogEntry_({ timestamp: now, recipients: recipients.join(', '), subject, trigger: mode });
 
   return { subject, recipients, invalid, quiet: selection.quiet, usedGemini, warnings };
+}
+
+/**
+ * Reads the Recipients tab (`name | email | enabled`). If the tab does not exist yet it is
+ * created with just the header row, so it is obvious where to add people.
+ * @returns {any[][]} the data rows (header excluded)
+ */
+function readRecipientRows_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(RECIPIENTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(RECIPIENTS_TAB);
+    sheet.appendRow(RECIPIENTS_HEADERS);
+  }
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, RECIPIENTS_HEADERS.length).getValues();
 }
 
 /**
