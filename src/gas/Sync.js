@@ -33,6 +33,7 @@ function runSync_() {
   const repos = getTrackedRepos(); // throws a clear error if Settings tab is missing/misconfigured
   const { githubToken, geminiApiKey } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
 
+  const lastSyncAt = readLastSyncTime_(); // read now: this run appends its own Log row at the end
   const fetchFn = (url, options) => UrlFetchApp.fetch(url, options);
   const rows = [];
   const errors = [];
@@ -67,7 +68,9 @@ function runSync_() {
   // failure is recorded but never fails the sync — the data is already written.
   if (upsert && upsert.changes.length > 0) {
     try {
-      const prompt = buildInsightPrompt(upsert.changes, rows, new Date());
+      // With no previous Log row, treat everything already on GitHub as history rather than news.
+      const now = new Date();
+      const prompt = buildInsightPrompt(upsert.changes, rows, now, lastSyncAt || now);
       const summary = summarizeActivity(fetchFn, geminiApiKey, prompt, { sleepFn: ms => Utilities.sleep(ms) });
       // Links can only point at items fetched from GitHub in this run, never at model-written URLs.
       writeInsightEntry_({ timestamp: new Date(), insight: formatInsightSummary(summary, rows) });
@@ -83,6 +86,16 @@ function runSync_() {
     errors: errors.join(' | ')
   });
   return { reposTotal: repos.length, reposSynced, rowsUpserted, errors };
+}
+
+/**
+ * @returns {Date|null} timestamp of the most recent Log row (the previous sync), or null if there is none
+ */
+function readLastSyncTime_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOG_TAB);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const value = sheet.getRange(sheet.getLastRow(), 1).getValue();
+  return Object.prototype.toString.call(value) === '[object Date]' ? value : null;
 }
 
 /**
@@ -103,7 +116,7 @@ function writeInsightEntry_(entry) {
   entry.insight.bold.forEach(range => builder.setTextStyle(range.start, range.end, boldStyle));
   entry.insight.links.forEach(link => builder.setLinkUrl(link.start, link.end, link.url));
 
-  sheet.getRange(row, 1).setValue(entry.timestamp).setVerticalAlignment('top');
+  sheet.getRange(row, 1).setValue(entry.timestamp).setNumberFormat('yyyy-mm-dd hh:mm:ss').setVerticalAlignment('top');
   sheet.getRange(row, 2).setRichTextValue(builder.build()).setWrap(true).setVerticalAlignment('top');
   if (sheet.getColumnWidth(2) < 300) sheet.setColumnWidth(2, 720); // wide enough to read a 2-4 sentence summary
 }
