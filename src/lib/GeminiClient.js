@@ -9,7 +9,7 @@
  */
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_DEFAULT_MODEL = 'gemini-flash-latest';
+const GEMINI_DEFAULT_MODEL = 'gemini-flash-lite-latest';
 const GEMINI_MAX_ATTEMPTS = 2;
 const GEMINI_RETRY_DELAY_MS = 2000;
 
