@@ -5,6 +5,7 @@
  */
 
 const SYNC_INTERVAL_MINUTES = 10;
+const DIGEST_TRIGGER_HOUR = 8; // Apps Script runs it some time within this hour, in the script's time zone
 
 /**
  * Run once manually (from the Apps Script editor) to install the
@@ -17,6 +18,22 @@ function installSyncTrigger() {
   ScriptApp.newTrigger('syncAll')
     .timeBased()
     .everyMinutes(SYNC_INTERVAL_MINUTES)
+    .create();
+}
+
+/**
+ * Run once manually (from the Apps Script editor) to install the daily
+ * digest trigger. Separate from the sync trigger, so re-running either
+ * installer never touches the other.
+ */
+function installDigestTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'sendScheduledDigest') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendScheduledDigest')
+    .timeBased()
+    .everyDays(1)
+    .atHour(DIGEST_TRIGGER_HOUR)
     .create();
 }
 

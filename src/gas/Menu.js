@@ -8,5 +8,6 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Repo Pulse')
     .addItem('Sync now', 'manualSyncNow')
+    .addItem('Send digest now', 'sendDigestNow')
     .addToUi();
 }
