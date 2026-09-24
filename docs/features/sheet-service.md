@@ -35,8 +35,10 @@ Two API calls per run regardless of size, which keeps `syncAll()` far below
 the 6-minute limit. If the same key appears twice in one batch (possible when
 items shift between pages while paginating), the last one wins.
 
-It returns `{added, updated, unchanged}`. The Log's `rowsUpserted` is
-`added + updated`, so a run that changed nothing shows `0`.
+It returns `{added, updated, unchanged, changes}`. The Log's `rowsUpserted` is
+`added + updated`, so a run that changed nothing shows `0`. `changes` lists each
+added row and each changed row (with its previous values), which is what the
+[Insights summary](gemini-insights.md) is built from.
 
 ## Stale-row policy: never delete, never mark
 
@@ -54,6 +56,14 @@ are**. Reasons:
 Consequence: an issue deleted or transferred on GitHub stays in the sheet
 with its last known state. That is rare; remove such a row by hand if it
 matters.
+
+**Moving or renaming a tracked repo is the big case.** The key includes the repo
+name, so pointing Settings at the new name (e.g. `MENGUEDAVIS/devfest-yaounde` →
+`gdgyaounde/devfest-yaounde`) adds every item again under the new name, and the
+old rows stay. This happened live (41 duplicates). Delete the old-name rows by
+hand after switching (filter the `repo` column, delete the rows). Following a
+repo across renames automatically would mean keying on GitHub's numeric repo ID,
+which is not done here.
 
 ## Text safety
 
