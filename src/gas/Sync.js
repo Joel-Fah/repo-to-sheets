@@ -69,7 +69,8 @@ function runSync_() {
     try {
       const prompt = buildInsightPrompt(upsert.changes, rows, new Date());
       const summary = summarizeActivity(fetchFn, geminiApiKey, prompt, { sleepFn: ms => Utilities.sleep(ms) });
-      writeInsightEntry_({ timestamp: new Date(), summary });
+      // Links can only point at items fetched from GitHub in this run, never at model-written URLs.
+      writeInsightEntry_({ timestamp: new Date(), insight: formatInsightSummary(summary, rows) });
     } catch (err) {
       errors.push(`${INSIGHTS_TAB}: ${err.message}`);
     }
@@ -85,7 +86,9 @@ function runSync_() {
 }
 
 /**
- * @param {{timestamp: Date, summary: string}} entry
+ * Appends one Insights row: the timestamp, and the summary as a rich-text cell
+ * (bold facts, clickable owner/repo#N references).
+ * @param {{timestamp: Date, insight: FormattedInsight}} entry
  */
 function writeInsightEntry_(entry) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -94,8 +97,15 @@ function writeInsightEntry_(entry) {
     sheet = ss.insertSheet(INSIGHTS_TAB);
     sheet.appendRow(['timestamp', 'summary']);
   }
-  // Model output is text we don't control: escape it so a leading "=", "-" etc. stays literal.
-  sheet.appendRow([entry.timestamp, escapeSheetText_(entry.summary)]);
+  const row = sheet.getLastRow() + 1;
+  const boldStyle = SpreadsheetApp.newTextStyle().setBold(true).build();
+  const builder = SpreadsheetApp.newRichTextValue().setText(entry.insight.text);
+  entry.insight.bold.forEach(range => builder.setTextStyle(range.start, range.end, boldStyle));
+  entry.insight.links.forEach(link => builder.setLinkUrl(link.start, link.end, link.url));
+
+  sheet.getRange(row, 1).setValue(entry.timestamp).setVerticalAlignment('top');
+  sheet.getRange(row, 2).setRichTextValue(builder.build()).setWrap(true).setVerticalAlignment('top');
+  if (sheet.getColumnWidth(2) < 300) sheet.setColumnWidth(2, 720); // wide enough to read a 2-4 sentence summary
 }
 
 /**
