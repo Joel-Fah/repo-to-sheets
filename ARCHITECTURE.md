@@ -21,6 +21,9 @@ flowchart LR
     D --> F[GeminiClient]
     F -->|summary text| G[(Insights tab)]
     D -.manual prompt.-> H[Sheets Canvas board]
+    D --> L[EmailDigest]
+    L -->|one Gemini call| F
+    L --> M[(HTML email + DigestLog tab)]
     I[Settings tab] --> J[Config]
     J --> K[Sync orchestrator]
     K --> A
@@ -39,8 +42,13 @@ flowchart LR
 | `src/lib/InsightPrompt.js` | Pure: turns the sync's added/changed rows into the compact prompt text (imported history counted separately from new activity, stale items listed). |
 | `src/lib/InsightFormat.js` | Pure: turns the model's `**bold**` markers and `owner/repo#N` references into bold and link ranges; link URLs come only from fetched GitHub data. |
 | `src/lib/SyncSummary.js` | Pure: formats a sync's result as the text of the "Sync now" popup. |
-| `src/gas/Triggers.js` | Installs the time-based trigger; exposes `manualSyncNow()` for the custom menu (used live on stage instead of waiting on the timer). |
-| `src/gas/Menu.js` | `onOpen()` — adds a "Repo Pulse" menu to the Sheet with a "Sync now" item. |
+| `src/gas/Triggers.js` | Installs the 10-minute sync trigger and the separate daily digest trigger; exposes `manualSyncNow()` for the custom menu (used live on stage instead of waiting on the timer). |
+| `src/gas/Menu.js` | `onOpen()` — adds a "Repo Pulse" menu to the Sheet with "Sync now" and "Send digest now" items. |
+| `src/gas/EmailDigest.js` | Thin glue for the email digest: reads recipients and the Activity tab, calls the pure digest pieces, sends with `MailApp`, writes the DigestLog row. Run by the menu item and by the daily trigger, under the script lock. |
+| `src/lib/EmailDigestBuilder.js` | Pure: `buildDigestHtml(rows, recommendations, meta)` → `{ subject, htmlBody, plainTextBody }`. Inline-styled, table-based HTML in the Kanban palette, with an all-quiet variant. |
+| `src/lib/DigestData.js` | Pure: the digest window, which rows are Shipped / In motion / Needs attention, and data-derived recommended actions. |
+| `src/lib/DigestPrompt.js` | Pure: the data block sent to Gemini for the digest (one call returns the headline and the actions). |
+| `src/lib/DigestRecipients.js` | Pure: parses and validates the rows of the Recipients tab (enabled rows only, valid addresses, de-duplicated). |
 
 ## Data model (Google Sheet)
 
@@ -52,6 +60,10 @@ flowchart LR
 **Log tab** — one row per sync run: `timestamp | reposSynced | rowsUpserted | errors`
 
 **Insights tab** — one row per run: `timestamp | summary (Gemini output)`
+
+**Recipients tab** — who gets the email digest, one address per row: `name | email | enabled`
+
+**DigestLog tab** — one row per digest sent: `timestamp | recipients | subject | trigger (manual/scheduled)`
 
 ## Multi-repo support
 Not a special case — `Sync.js` just iterates whatever is in the Settings

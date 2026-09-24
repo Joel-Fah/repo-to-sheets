@@ -8,6 +8,9 @@ const SETTINGS_TAB = 'Settings';
 const ACTIVITY_TAB = 'Activity';
 const LOG_TAB = 'Log';
 const INSIGHTS_TAB = 'Insights';
+const DIGEST_LOG_TAB = 'DigestLog';
+const RECIPIENTS_TAB = 'Recipients';
+const RECIPIENTS_HEADERS = ['name', 'email', 'enabled'];
 
 /**
  * @returns {{owner: string, repo: string}[]} repos marked enabled in the Settings tab
