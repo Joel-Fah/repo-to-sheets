@@ -28,13 +28,29 @@ function makeRow(overrides = {}) {
 }
 
 /**
+ * Mimics what a real Sheet was observed to do to a string written with
+ * setValues into a plain-text (@) cell: a leading apostrophe is consumed as
+ * a text marker, while a bare leading "=" is evaluated as a formula.
+ * @param {any} value
+ * @returns {any} what a later getValues() would return
+ */
+function storeLikeSheets(value) {
+  if (typeof value !== 'string') return value;
+  if (value.startsWith("'")) return value.slice(1);
+  if (value.startsWith('=')) return `#EVALUATED(${value})`;
+  return value;
+}
+
+/**
  * In-memory stand-in for the parts of the Spreadsheet/Sheet API SheetService uses.
- * `calls` records every mutation so tests can assert ordering and skipped writes.
+ * `calls` records every mutation so tests can assert ordering and skipped writes;
+ * `written` keeps the raw arguments given to setValues.
  * @param {any[][]} [initialGrid] - optional pre-existing sheet contents (header included)
- * @returns {{spreadsheet: object, sheet: object, calls: string[], grid: any[][]}}
+ * @returns {{spreadsheet: object, sheet: object, calls: string[], written: any[][][], grid: any[][]}}
  */
 function fakeSpreadsheet(initialGrid) {
   const calls = [];
+  const written = [];
   const grid = initialGrid ? initialGrid.map(r => r.slice()) : [];
   const sheets = {};
   let sheet = null;
@@ -54,8 +70,9 @@ function fakeSpreadsheet(initialGrid) {
         },
         setValues: values => {
           calls.push('setValues');
+          written.push(values.map(vals => vals.slice()));
           assert.equal(values.length, numRows);
-          values.forEach((vals, r) => { grid[row - 1 + r] = vals.slice(); });
+          values.forEach((vals, r) => { grid[row - 1 + r] = vals.map(storeLikeSheets); });
         }
       })
     };
@@ -65,7 +82,7 @@ function fakeSpreadsheet(initialGrid) {
     getSheetByName: name => (name === TAB ? sheet : null),
     insertSheet: name => { calls.push(`insertSheet:${name}`); sheet = makeSheet(); sheets[name] = sheet; return sheet; }
   };
-  return { spreadsheet, calls, grid };
+  return { spreadsheet, calls, written, grid };
 }
 
 // ---- planActivityUpsert (pure) ----
@@ -206,11 +223,44 @@ test('a changed row is updated at the same position on the next run', () => {
   assert.equal(grid[2][2], 2, 'row 2 still in place');
 });
 
-test('number formats are applied before values so titles like "=1+1" stay literal text', () => {
+test('text number formats are applied before values are written', () => {
   const { spreadsheet, calls } = fakeSpreadsheet();
-  upsertActivityRows(spreadsheet, TAB, [makeRow({ title: '=IMPORTDATA("http://example.com")' })]);
+  upsertActivityRows(spreadsheet, TAB, [makeRow()]);
   assert.ok(calls.indexOf('setNumberFormats') !== -1);
   assert.ok(calls.indexOf('setNumberFormats') < calls.indexOf('setValues'));
+});
+
+test('titles that Sheets would evaluate or mangle are escaped on write and read back verbatim', () => {
+  const titles = ['=1+1', '+1+1', '-2+3', '@SUM(1)', "'quoted", '=IMPORTDATA("http://example.com")'];
+  const { spreadsheet, written, grid } = fakeSpreadsheet();
+  const rows = titles.map((title, i) => makeRow({ number: i + 1, title }));
+
+  upsertActivityRows(spreadsheet, TAB, rows);
+
+  assert.deepEqual(written[0].map(r => r[3]), titles.map(t => `'${t}`), 'apostrophe added at write time');
+  assert.deepEqual(grid.slice(1).map(r => r[3]), titles, 'stored text equals the original title');
+});
+
+test('escaped rows are seen as unchanged on the next run and stay literal when rewritten', () => {
+  const { spreadsheet, grid } = fakeSpreadsheet();
+  const evil = makeRow({ number: 1, title: '=1+1' });
+  upsertActivityRows(spreadsheet, TAB, [evil]);
+
+  const again = upsertActivityRows(spreadsheet, TAB, [evil]);
+  assert.deepEqual(again, { added: 0, updated: 0, unchanged: 1 });
+
+  // A different row changes, so the whole data area (including the evil row) is rewritten.
+  upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 2, title: 'plain' })]);
+  assert.equal(grid[1][3], '=1+1', 'the untouched row is still literal text after a rewrite');
+});
+
+test('normal titles and non-text cells are not altered by escaping', () => {
+  const { spreadsheet, written } = fakeSpreadsheet();
+  upsertActivityRows(spreadsheet, TAB, [makeRow({ title: 'Plain title', number: 12 })]);
+  const [row] = written[0];
+  assert.equal(row[2], 12, 'number stays a number');
+  assert.equal(row[3], 'Plain title');
+  assert.ok(row[8] instanceof Date, 'updatedAt stays a Date');
 });
 
 test('an existing but empty Activity tab gets its header row', () => {
