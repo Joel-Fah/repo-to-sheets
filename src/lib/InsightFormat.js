@@ -38,6 +38,19 @@ function formatInsightSummary(summary, knownItems) {
     if (index % 2 === 1 && piece.length > 0) bold.push({ start, end: text.length });
   });
 
+  // A rich-text cell starting with "=" or "+" is evaluated as a formula (checked on a real Sheet: #ERROR!),
+  // and "-" / "@" are formula triggers too. Drop any leading run of them (and whitespace) so the text can't be
+  // one, and shift the bold ranges to match.
+  const lead = /^[\s=+\-@]+/.exec(text);
+  const cut = lead ? lead[0].length : 0;
+  if (cut > 0) {
+    text = text.slice(cut);
+    for (let i = bold.length - 1; i >= 0; i -= 1) {
+      bold[i] = { start: Math.max(0, bold[i].start - cut), end: bold[i].end - cut };
+      if (bold[i].end <= bold[i].start) bold.splice(i, 1);
+    }
+  }
+
   const links = [];
   let match;
   INSIGHT_REF_PATTERN.lastIndex = 0;

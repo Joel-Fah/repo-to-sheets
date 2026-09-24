@@ -85,3 +85,32 @@ test('items without a URL and a missing item list are tolerated', () => {
   assert.deepEqual(formatInsightSummary('Joel-Fah/repo-to-sheets#4', [{ repo: 'Joel-Fah/repo-to-sheets', number: 4 }]).links, []);
   assert.deepEqual(formatInsightSummary('Joel-Fah/repo-to-sheets#4', undefined).links, []);
 });
+
+test('leading formula triggers are removed so a rich-text cell can never start with = + - or @', () => {
+  const cases = [
+    ['=1+1 is not a formula', '1+1 is not a formula'],
+    ['+1 opened', '1 opened'],
+    ['- looks like a bullet', 'looks like a bullet'],
+    ['-2+3 result', '2+3 result'],
+    ['@SUM(1) mention', 'SUM(1) mention'],
+    ['  = spaced', 'spaced']
+  ];
+  cases.forEach(([input, expected]) => assert.equal(formatInsightSummary(input, items).text, expected));
+});
+
+test('removing leading characters shifts bold ranges and links to the right place', () => {
+  const result = formatInsightSummary('= **Merged** Joel-Fah/repo-to-sheets#4 today', items);
+  assert.equal(result.text, 'Merged Joel-Fah/repo-to-sheets#4 today');
+  assert.equal(slice(result, result.bold[0]), 'Merged');
+  assert.equal(slice(result, result.links[0]), 'Joel-Fah/repo-to-sheets#4');
+});
+
+test('a bold range that sits entirely inside the removed prefix is dropped', () => {
+  const result = formatInsightSummary('**==** then text', items);
+  assert.equal(result.text, 'then text');
+  assert.deepEqual(result.bold, []);
+});
+
+test('an "=" or "+" in the middle of a sentence is left alone', () => {
+  assert.equal(formatInsightSummary('Ran 1+1 = 2 checks', items).text, 'Ran 1+1 = 2 checks');
+});
