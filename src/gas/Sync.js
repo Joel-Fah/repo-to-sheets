@@ -1,7 +1,8 @@
 /**
  * Sync.js
  * Orchestrator: for every enabled repo in the Settings tab, fetch issues and
- * PRs, normalize them, upsert everything into the Activity tab, and record
+ * PRs, normalize them, upsert everything into the Activity tab, summarize what
+ * changed into the Insights tab (via Gemini, only when something changed), and record
  * the run in the Log tab. One repo failing never stops the others — its
  * error goes in the Log's `errors` column and the run continues.
  */
