@@ -37,7 +37,7 @@ test('no changes means no prompt (nothing to summarize)', () => {
 
 test('a new item is described with repo, number, title, state, status and priority', () => {
   const prompt = buildInsightPrompt([added(makeRow({ number: 7, title: 'Add thing' }))], [], NOW);
-  assert.match(prompt, /^Changes detected in this sync:\n- NEW issue #7 in Joel-Fah\/repo-to-sheets "Add thing" \(open; status todo; priority high\)$/);
+  assert.ok(prompt.startsWith('Changes detected in this sync:\n- NEW issue Joel-Fah/repo-to-sheets#7 "Add thing" (open; status todo; priority high)\n'));
 });
 
 test('missing status and priority read as "none"', () => {
@@ -49,14 +49,14 @@ test('an updated item lists only the fields that changed, as old -> new', () => 
   const before = makeRow({ state: 'open', status: 'in-progress', priority: 'high' });
   const now = makeRow({ state: 'closed', status: 'done', priority: 'high' });
   const prompt = buildInsightPrompt([updated(before, now)], [], NOW);
-  assert.match(prompt, /UPDATED issue #1 in Joel-Fah\/repo-to-sheets "First issue": state: open -> closed; status: in-progress -> done$/m);
+  assert.match(prompt, /UPDATED issue Joel-Fah\/repo-to-sheets#1 "First issue": state: open -> closed; status: in-progress -> done$/m);
   assert.ok(!prompt.includes('priority:'), 'unchanged priority is not listed');
 });
 
 test('a PR that merges shows its state and status transition', () => {
   const before = makeRow({ type: 'pr', number: 4, state: 'open', status: 'open', priority: '' });
   const now = makeRow({ type: 'pr', number: 4, state: 'closed', status: 'merged', priority: '' });
-  assert.match(buildInsightPrompt([updated(before, now)], [], NOW), /UPDATED pr #4 .*state: open -> closed; status: open -> merged/);
+  assert.match(buildInsightPrompt([updated(before, now)], [], NOW), /UPDATED pr Joel-Fah\/repo-to-sheets#4 .*state: open -> closed; status: open -> merged/);
 });
 
 test('an empty value in a diff is shown as "none"', () => {
@@ -101,13 +101,19 @@ test('stale items appear in a separate section of the prompt, capped at 10', () 
   const stale = Array.from({ length: 12 }, (_, i) => makeRow({ number: 100 + i, updatedAt: `2026-08-${String(i + 1).padStart(2, '0')}T00:00:00Z` }));
   const prompt = buildInsightPrompt([added(makeRow())], stale, NOW);
   assert.match(prompt, /\n\nOpen items with no activity for 14\+ days:\n/);
-  assert.equal(prompt.split('\n').filter(l => /^- issue #1\d\d/.test(l)).length, 10);
+  assert.equal(prompt.split('\n').filter(l => /^- issue Joel-Fah\/repo-to-sheets#1\d\d/.test(l)).length, 10);
   assert.ok(prompt.includes('- ...and 2 more'));
   assert.match(prompt, /last updated 2026-08-01/);
 });
 
-test('no stale section when nothing is stale', () => {
-  assert.ok(!buildInsightPrompt([added(makeRow())], [makeRow()], NOW).includes('no activity'));
+test('when nothing is stale the section still appears and says "none", so the model is never left guessing', () => {
+  const prompt = buildInsightPrompt([added(makeRow())], [makeRow()], NOW);
+  assert.ok(prompt.endsWith('Open items with no activity for 14+ days:\n- none'));
+});
+
+test('every item is written as owner/repo#number, the form the model is told to repeat and we link', () => {
+  const prompt = buildInsightPrompt([added(makeRow({ repo: 'a/b', number: 12 }))], [], NOW);
+  assert.ok(prompt.includes('a/b#12'));
 });
 
 test('end to end with real fixtures: changes from a real upsert plan become prompt lines', () => {
@@ -118,6 +124,6 @@ test('end to end with real fixtures: changes from a real upsert plan become prom
   const second = planActivityUpsert(first.table, closedNow);
 
   const prompt = buildInsightPrompt(second.changes, closedNow, NOW);
-  assert.match(prompt, /UPDATED issue #3 in Joel-Fah\/repo-to-sheets "Implement GitHubClient \+ Transformer": state: open -> closed; status: in-progress -> done/);
+  assert.match(prompt, /UPDATED issue Joel-Fah\/repo-to-sheets#3 "Implement GitHubClient \+ Transformer": state: open -> closed; status: in-progress -> done/);
   assert.equal(second.changes.length, 1);
 });

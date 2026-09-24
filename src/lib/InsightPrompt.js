@@ -25,9 +25,12 @@ function buildInsightPrompt(changes, currentRows, now) {
     lines.push(`- ...and ${changes.length - INSIGHT_MAX_CHANGES} more changes not listed`);
   }
 
+  // Always state this section: if it were omitted when empty, the model could only guess whether "nothing stale" was true.
   const stale = findStaleItems(currentRows || [], now, INSIGHT_STALE_DAYS);
-  if (stale.length > 0) {
-    lines.push('', `Open items with no activity for ${INSIGHT_STALE_DAYS}+ days:`);
+  lines.push('', `Open items with no activity for ${INSIGHT_STALE_DAYS}+ days:`);
+  if (stale.length === 0) {
+    lines.push('- none');
+  } else {
     stale.slice(0, INSIGHT_MAX_STALE).forEach(row => lines.push(`- ${describeItem_(row)}, last updated ${row.updatedAt.slice(0, 10)}`));
     if (stale.length > INSIGHT_MAX_STALE) lines.push(`- ...and ${stale.length - INSIGHT_MAX_STALE} more`);
   }
@@ -64,10 +67,11 @@ function describeChange_(change) {
 
 /**
  * @param {object} row
- * @returns {string} e.g. 'pr #4 in Joel-Fah/repo-to-sheets "feat: implement ..."'
+ * @returns {string} e.g. 'pr Joel-Fah/repo-to-sheets#4 "feat: implement ..."'; the owner/repo#number
+ *   reference is what the model is told to repeat, and what InsightFormat turns into a link
  */
 function describeItem_(row) {
-  return `${row.type} #${row.number} in ${row.repo} "${shortTitle_(row.title)}"`;
+  return `${row.type} ${row.repo}#${row.number} "${shortTitle_(row.title)}"`;
 }
 
 /**
