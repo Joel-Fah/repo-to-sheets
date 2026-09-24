@@ -12,8 +12,9 @@ const ACTIVITY_COLUMNS = [
   'repo', 'type', 'number', 'title', 'state', 'status', 'priority', 'assignee', 'updatedAt', 'url'
 ];
 
-// Plain text for every text column so GitHub-supplied titles that start with
-// "=" can never be evaluated as formulas.
+// Plain text for every text column, so text like "007", "1/2" or "TRUE" is
+// stored as typed instead of being coerced to a number, date or boolean.
+// This alone does not stop "=..." being evaluated: see escapeActivityCell_.
 const ACTIVITY_NUMBER_FORMATS = [
   '@', '@', '0', '@', '@', '@', '@', '@', 'yyyy-mm-dd hh:mm:ss', '@'
 ];
@@ -37,7 +38,8 @@ function upsertActivityRows(spreadsheet, tabName, rows) {
   if (plan.added + plan.updated > 0) {
     const range = sheet.getRange(2, 1, plan.table.length, width);
     range.setNumberFormats(plan.table.map(() => ACTIVITY_NUMBER_FORMATS)); // formats first, so values stay literal
-    range.setValues(plan.table);
+    // Every string is escaped, including unchanged rows: the whole data area is rewritten.
+    range.setValues(plan.table.map(values => values.map(escapeActivityCell_)));
   }
   return { added: plan.added, updated: plan.updated, unchanged: plan.unchanged };
 }
@@ -132,6 +134,20 @@ function activityRowToValues_(row) {
     updatedAt && !Number.isNaN(updatedAt.getTime()) ? updatedAt : '',
     row.url
   ];
+}
+
+/**
+ * Protects GitHub-supplied text (titles, labels, assignees) from being
+ * interpreted by Sheets. Verified against a real Sheet: setValues evaluates a
+ * leading "=" even in a plain-text cell, so a hostile issue title could run a
+ * formula. A leading apostrophe forces literal text and is stripped on write,
+ * so reads return the original string. "'" is included because Sheets would
+ * otherwise strip a title's own leading apostrophe.
+ * @param {any} value
+ * @returns {any} the value, with "'" prepended if it is a string starting with = + - @ or '
+ */
+function escapeActivityCell_(value) {
+  return typeof value === 'string' && /^[=+\-@']/.test(value) ? `'${value}` : value;
 }
 
 /**
