@@ -1,7 +1,8 @@
 /**
  * Sync.js
  * Orchestrator: for every enabled repo in the Settings tab, fetch issues and
- * PRs, normalize them, upsert everything into the Activity tab, and record
+ * PRs, normalize them, upsert everything into the Activity tab, summarize what
+ * changed into the Insights tab (via Gemini, only when something changed), and record
  * the run in the Log tab. One repo failing never stops the others — its
  * error goes in the Log's `errors` column and the run continues.
  */
@@ -30,8 +31,9 @@ function syncAll() {
  */
 function runSync_() {
   const repos = getTrackedRepos(); // throws a clear error if Settings tab is missing/misconfigured
-  const { githubToken } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
+  const { githubToken, geminiApiKey } = getSecrets(); // throws a clear error if secrets aren't set — fail fast, fail clearly
 
+  const lastSyncAt = readLastSyncTime_(); // read now: this run appends its own Log row at the end
   const fetchFn = (url, options) => UrlFetchApp.fetch(url, options);
   const rows = [];
   const errors = [];
@@ -53,11 +55,28 @@ function runSync_() {
   });
 
   let rowsUpserted = 0;
+  let upsert = null;
   try {
-    const result = upsertActivityRows(SpreadsheetApp.getActiveSpreadsheet(), ACTIVITY_TAB, rows);
-    rowsUpserted = result.added + result.updated;
+    upsert = upsertActivityRows(SpreadsheetApp.getActiveSpreadsheet(), ACTIVITY_TAB, rows);
+    rowsUpserted = upsert.added + upsert.updated;
   } catch (err) {
     errors.push(`${ACTIVITY_TAB} write: ${err.message}`);
+  }
+
+  // Summarize only when something changed: no point spending free-tier quota
+  // (or adding an Insights row) on a run that found nothing new. A Gemini
+  // failure is recorded but never fails the sync — the data is already written.
+  if (upsert && upsert.changes.length > 0) {
+    try {
+      // With no previous Log row, treat everything already on GitHub as history rather than news.
+      const now = new Date();
+      const prompt = buildInsightPrompt(upsert.changes, rows, now, lastSyncAt || now);
+      const summary = summarizeActivity(fetchFn, geminiApiKey, prompt, { sleepFn: ms => Utilities.sleep(ms) });
+      // Links can only point at items fetched from GitHub in this run, never at model-written URLs.
+      writeInsightEntry_({ timestamp: new Date(), insight: formatInsightSummary(summary, rows) });
+    } catch (err) {
+      errors.push(`${INSIGHTS_TAB}: ${err.message}`);
+    }
   }
 
   writeLogEntry_({
@@ -67,6 +86,39 @@ function runSync_() {
     errors: errors.join(' | ')
   });
   return { reposTotal: repos.length, reposSynced, rowsUpserted, errors };
+}
+
+/**
+ * @returns {Date|null} timestamp of the most recent Log row (the previous sync), or null if there is none
+ */
+function readLastSyncTime_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOG_TAB);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const value = sheet.getRange(sheet.getLastRow(), 1).getValue();
+  return Object.prototype.toString.call(value) === '[object Date]' ? value : null;
+}
+
+/**
+ * Appends one Insights row: the timestamp, and the summary as a rich-text cell
+ * (bold facts, clickable owner/repo#N references).
+ * @param {{timestamp: Date, insight: FormattedInsight}} entry
+ */
+function writeInsightEntry_(entry) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(INSIGHTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(INSIGHTS_TAB);
+    sheet.appendRow(['timestamp', 'summary']);
+  }
+  const row = sheet.getLastRow() + 1;
+  const boldStyle = SpreadsheetApp.newTextStyle().setBold(true).build();
+  const builder = SpreadsheetApp.newRichTextValue().setText(entry.insight.text);
+  entry.insight.bold.forEach(range => builder.setTextStyle(range.start, range.end, boldStyle));
+  entry.insight.links.forEach(link => builder.setLinkUrl(link.start, link.end, link.url));
+
+  sheet.getRange(row, 1).setValue(entry.timestamp).setNumberFormat('yyyy-mm-dd hh:mm:ss').setVerticalAlignment('top');
+  sheet.getRange(row, 2).setRichTextValue(builder.build()).setWrap(true).setVerticalAlignment('top');
+  if (sheet.getColumnWidth(2) < 300) sheet.setColumnWidth(2, 720); // wide enough to read a 2-4 sentence summary
 }
 
 /**

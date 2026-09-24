@@ -33,9 +33,12 @@ flowchart LR
 | `src/gas/Config.js` | Reads tracked repos + tab names from the **Settings** tab; reads secrets from PropertiesService |
 | `src/lib/GitHubClient.js` | Fetches issues/PRs from the GitHub REST API, handles pagination and rate-limit checks. Takes an injected fetch function so it's testable outside GAS. |
 | `src/lib/Transformer.js` | Pure functions: raw GitHub JSON → normalized row objects. No GAS globals. Fully unit tested. |
-| `src/gas/Sync.js` | Orchestrator: loops over configured repos, calls GitHubClient → Transformer → SheetService, then GeminiClient once per run. |
-| `src/lib/SheetService.js` | Upserts rows into the Activity tab keyed on `(repo, type, number)`; writes a run entry to the Log tab. |
-| `src/lib/GeminiClient.js` | Calls the Gemini API with a diff of what changed since the last run; returns a short natural-language summary. |
+| `src/gas/Sync.js` | Orchestrator, run under a script lock: loops over configured repos (one repo failing never stops the others), calls GitHubClient → Transformer → SheetService, then — only if something changed — the Gemini summary steps; writes the Insights and Log rows. |
+| `src/lib/SheetService.js` | Upserts rows into the Activity tab keyed on `(repo, type, number)` (spreadsheet injected, so it is testable); reports which rows were added or changed. |
+| `src/lib/GeminiClient.js` | Calls the Gemini API (`generateContent`) with the change prompt, retries once, and falls back to a second model; returns a short natural-language summary. |
+| `src/lib/InsightPrompt.js` | Pure: turns the sync's added/changed rows into the compact prompt text (imported history counted separately from new activity, stale items listed). |
+| `src/lib/InsightFormat.js` | Pure: turns the model's `**bold**` markers and `owner/repo#N` references into bold and link ranges; link URLs come only from fetched GitHub data. |
+| `src/lib/SyncSummary.js` | Pure: formats a sync's result as the text of the "Sync now" popup. |
 | `src/gas/Triggers.js` | Installs the time-based trigger; exposes `manualSyncNow()` for the custom menu (used live on stage instead of waiting on the timer). |
 | `src/gas/Menu.js` | `onOpen()` — adds a "Repo Pulse" menu to the Sheet with a "Sync now" item. |
 

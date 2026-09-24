@@ -14,7 +14,7 @@ const ACTIVITY_COLUMNS = [
 
 // Plain text for every text column, so text like "007", "1/2" or "TRUE" is
 // stored as typed instead of being coerced to a number, date or boolean.
-// This alone does not stop "=..." being evaluated: see escapeActivityCell_.
+// This alone does not stop "=..." being evaluated: see escapeSheetText_.
 const ACTIVITY_NUMBER_FORMATS = [
   '@', '@', '0', '@', '@', '@', '@', '@', 'yyyy-mm-dd hh:mm:ss', '@'
 ];
@@ -25,7 +25,8 @@ const ACTIVITY_NUMBER_FORMATS = [
  * @param {{getSheetByName: function, insertSheet: function}} spreadsheet - e.g. SpreadsheetApp.getActiveSpreadsheet()
  * @param {string} tabName - Activity tab name
  * @param {object[]} rows - normalized rows from Transformer.normalize
- * @returns {{added: number, updated: number, unchanged: number}} counts for this run
+ * @returns {{added: number, updated: number, unchanged: number, changes: ActivityChange[]}}
+ *   counts for this run, plus each added/changed row (what the Insights summary is built from)
  */
 function upsertActivityRows(spreadsheet, tabName, rows) {
   const sheet = getOrCreateActivitySheet_(spreadsheet, tabName);
@@ -39,16 +40,23 @@ function upsertActivityRows(spreadsheet, tabName, rows) {
     const range = sheet.getRange(2, 1, plan.table.length, width);
     range.setNumberFormats(plan.table.map(() => ACTIVITY_NUMBER_FORMATS)); // formats first, so values stay literal
     // Every string is escaped, including unchanged rows: the whole data area is rewritten.
-    range.setValues(plan.table.map(values => values.map(escapeActivityCell_)));
+    range.setValues(plan.table.map(values => values.map(escapeSheetText_)));
   }
-  return { added: plan.added, updated: plan.updated, unchanged: plan.unchanged };
+  return { added: plan.added, updated: plan.updated, unchanged: plan.unchanged, changes: plan.changes };
 }
+
+/**
+ * @typedef {object} ActivityChange
+ * @property {'added'|'updated'} kind
+ * @property {object} row - the normalized row as it is now
+ * @property {object} [before] - for 'updated': the row as it was in the sheet, keyed by column name
+ */
 
 /**
  * Pure planning step of the upsert.
  * @param {any[][]} existingValues - current Activity data rows (header excluded), in ACTIVITY_COLUMNS order
  * @param {object[]} rows - normalized rows; if the same key appears twice the last one wins
- * @returns {{table: any[][], added: number, updated: number, unchanged: number}}
+ * @returns {{table: any[][], added: number, updated: number, unchanged: number, changes: ActivityChange[]}}
  *   `table` is the full data area to write back: existing rows in their original
  *   order (changed ones replaced in place), then new rows appended.
  */
@@ -66,20 +74,39 @@ function planActivityUpsert(existingValues, rows) {
   let added = 0;
   let updated = 0;
   let unchanged = 0;
+  const changes = [];
   incomingByKey.forEach((row, key) => {
     const values = activityRowToValues_(row);
     if (!indexByKey.has(key)) {
       table.push(values);
       indexByKey.set(key, table.length - 1);
       added += 1;
+      changes.push({ kind: 'added', row });
     } else if (sameRow_(table[indexByKey.get(key)], values)) {
       unchanged += 1;
     } else {
+      const before = activityValuesToRow_(table[indexByKey.get(key)]);
       table[indexByKey.get(key)] = values;
       updated += 1;
+      changes.push({ kind: 'updated', row, before });
     }
   });
-  return { table, added, updated, unchanged };
+  return { table, added, updated, unchanged, changes };
+}
+
+/**
+ * @param {any[]} values - one sheet row in ACTIVITY_COLUMNS order
+ * @returns {object} the same data keyed by column name; a Date cell becomes an ISO string
+ */
+function activityValuesToRow_(values) {
+  const row = {};
+  ACTIVITY_COLUMNS.forEach((column, i) => {
+    const cell = values[i];
+    row[column] = Object.prototype.toString.call(cell) === '[object Date]' && !Number.isNaN(cell.getTime())
+      ? cell.toISOString()
+      : cell;
+  });
+  return row;
 }
 
 /**
@@ -146,7 +173,7 @@ function activityRowToValues_(row) {
  * @param {any} value
  * @returns {any} the value, with "'" prepended if it is a string starting with = + - @ or '
  */
-function escapeActivityCell_(value) {
+function escapeSheetText_(value) {
   return typeof value === 'string' && /^[=+\-@']/.test(value) ? `'${value}` : value;
 }
 

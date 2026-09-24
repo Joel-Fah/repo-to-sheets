@@ -8,6 +8,14 @@ const HEADERS = ['repo', 'type', 'number', 'title', 'state', 'status', 'priority
 const TAB = 'Activity';
 
 /**
+ * @param {{added: number, updated: number, unchanged: number}} result - an upsertActivityRows result
+ * @returns {{added: number, updated: number, unchanged: number}} just the counts
+ */
+function counts({ added, updated, unchanged }) {
+  return { added, updated, unchanged };
+}
+
+/**
  * @param {object} [overrides]
  * @returns {object} a normalized row
  */
@@ -190,7 +198,7 @@ test('creates the Activity tab with headers when it does not exist', () => {
   const { spreadsheet, calls, grid } = fakeSpreadsheet();
   const result = upsertActivityRows(spreadsheet, TAB, [makeRow()]);
 
-  assert.deepEqual(result, { added: 1, updated: 0, unchanged: 0 });
+  assert.deepEqual(counts(result), { added: 1, updated: 0, unchanged: 0 });
   assert.equal(calls[0], `insertSheet:${TAB}`);
   assert.deepEqual(grid[0], HEADERS);
   assert.equal(grid.length, 2);
@@ -205,7 +213,7 @@ test('running the upsert twice does not duplicate rows and skips the second writ
   const writesAfterFirst = calls.filter(c => c === 'setValues').length;
   const second = upsertActivityRows(spreadsheet, TAB, rows);
 
-  assert.deepEqual(second, { added: 0, updated: 0, unchanged: 2 });
+  assert.deepEqual(counts(second), { added: 0, updated: 0, unchanged: 2 });
   assert.equal(grid.length, 3, 'header + 2 rows, no duplicates');
   assert.equal(calls.filter(c => c === 'setValues').length, writesAfterFirst, 'no write when nothing changed');
 });
@@ -216,7 +224,7 @@ test('a changed row is updated at the same position on the next run', () => {
 
   const result = upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 1, state: 'closed', status: 'done' })]);
 
-  assert.deepEqual(result, { added: 0, updated: 1, unchanged: 0 });
+  assert.deepEqual(counts(result), { added: 0, updated: 1, unchanged: 0 });
   assert.equal(grid.length, 3);
   assert.equal(grid[1][2], 1);
   assert.equal(grid[1][4], 'closed');
@@ -247,7 +255,7 @@ test('escaped rows are seen as unchanged on the next run and stay literal when r
   upsertActivityRows(spreadsheet, TAB, [evil]);
 
   const again = upsertActivityRows(spreadsheet, TAB, [evil]);
-  assert.deepEqual(again, { added: 0, updated: 0, unchanged: 1 });
+  assert.deepEqual(counts(again), { added: 0, updated: 0, unchanged: 1 });
 
   // A different row changes, so the whole data area (including the evil row) is rewritten.
   upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 2, title: 'plain' })]);
@@ -274,4 +282,41 @@ test('throws a clear error, without writing, when the header row was changed', (
   const { spreadsheet, calls } = fakeSpreadsheet([['repo', 'kind', 'number']]);
   assert.throws(() => upsertActivityRows(spreadsheet, TAB, [makeRow()]), /headers don't match/);
   assert.ok(!calls.includes('setValues'));
+});
+
+// ---- changes (what the Insights summary is built from) ----
+
+test('changes lists each added row and each updated row with its previous values', () => {
+  const existing = planActivityUpsert([], [makeRow({ number: 1 }), makeRow({ number: 2 })]).table;
+  const plan = planActivityUpsert(existing, [
+    makeRow({ number: 1 }), // identical
+    makeRow({ number: 2, state: 'closed', status: 'done' }), // changed
+    makeRow({ number: 3, title: 'Brand new' }) // new
+  ]);
+
+  assert.deepEqual(plan.changes.map(c => [c.kind, c.row.number]), [['updated', 2], ['added', 3]]);
+  const updatedChange = plan.changes[0];
+  assert.equal(updatedChange.before.state, 'open');
+  assert.equal(updatedChange.before.status, 'todo');
+  assert.equal(updatedChange.row.state, 'closed');
+  assert.equal(typeof updatedChange.before.updatedAt, 'string', 'a Date cell is reported as an ISO string');
+});
+
+test('an identical second run has no changes', () => {
+  const rows = [makeRow({ number: 1 }), makeRow({ number: 2 })];
+  const once = planActivityUpsert([], rows);
+  assert.equal(once.changes.length, 2);
+  assert.deepEqual(planActivityUpsert(once.table, rows).changes, []);
+});
+
+test('upsertActivityRows returns the changes for the summary step', () => {
+  const { spreadsheet } = fakeSpreadsheet();
+  const first = upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 1 })]);
+  assert.deepEqual(first.changes.map(c => c.kind), ['added']);
+
+  const second = upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 1, state: 'closed', status: 'done' })]);
+  assert.deepEqual(second.changes.map(c => c.kind), ['updated']);
+  assert.equal(second.changes[0].before.state, 'open');
+
+  assert.deepEqual(upsertActivityRows(spreadsheet, TAB, [makeRow({ number: 1, state: 'closed', status: 'done' })]).changes, []);
 });
