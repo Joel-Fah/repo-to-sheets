@@ -48,11 +48,11 @@ flowchart LR
 | `src/lib/EmailDigestBuilder.js` | Pure: `buildDigestHtml(rows, recommendations, meta)` → `{ subject, htmlBody, plainTextBody }`. Inline-styled, table-based HTML in the Kanban palette, with an all-quiet variant. |
 | `src/lib/DigestData.js` | Pure: the digest window, which rows are Shipped / In motion / Needs attention, and data-derived recommended actions. |
 | `src/lib/DigestPrompt.js` | Pure: the data block sent to Gemini for the digest (one call returns the headline and the actions). |
-| `src/lib/DigestRecipients.js` | Pure: parses and validates the recipients cell from the Settings tab. |
+| `src/lib/DigestRecipients.js` | Pure: parses and validates the rows of the Recipients tab (enabled rows only, valid addresses, de-duplicated). |
 
 ## Data model (Google Sheet)
 
-**Settings tab** — one row per tracked repo: `owner | repo | enabled`, plus one optional row for the digest: `recipients | a@x.com, b@y.org` (column C empty)
+**Settings tab** — one row per tracked repo: `owner | repo | enabled`
 
 **Activity tab** — one row per issue/PR across all tracked repos:
 `repo | type (issue/pr) | number | title | state | status label | priority label | assignee | updatedAt | url`
@@ -60,6 +60,8 @@ flowchart LR
 **Log tab** — one row per sync run: `timestamp | reposSynced | rowsUpserted | errors`
 
 **Insights tab** — one row per run: `timestamp | summary (Gemini output)`
+
+**Recipients tab** — who gets the email digest, one address per row: `name | email | enabled`
 
 **DigestLog tab** — one row per digest sent: `timestamp | recipients | subject | trigger (manual/scheduled)`
 

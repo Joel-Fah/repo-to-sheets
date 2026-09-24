@@ -41,7 +41,7 @@ cards colored by `priority`, 48 cards across two repos.*
 - 🚧 **Phase 5 — HTML email digest** (built and unit tested; real-inbox check pending): a designed daily (or on-demand) email of what shipped, what is in
   motion and what needs attention, with recommended actions derived from the data, priority chips in the
   Kanban palette, and an "all quiet" version. **Repo Pulse → Send digest now** sends it on demand; recipients
-  are a row in the Settings tab. See [`docs/features/email-digest.md`](./docs/features/email-digest.md).
+  live in their own Recipients tab. See [`docs/features/email-digest.md`](./docs/features/email-digest.md).
 
 ## How it works
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full data flow. Short
@@ -61,7 +61,7 @@ no access to your Google account, so the browser steps can't be
 automated.
 
 ## Email digest
-Add a `recipients` row to the Settings tab (`recipients | you@example.com, teammate@example.org`), then use
+List who gets it in the **Recipients** tab (`name | email | enabled`, one address per row, `enabled` = `TRUE`), then use
 **Repo Pulse → Send digest now**, or run `installDigestTrigger()` once from the Apps Script editor for a daily send.
 Details, design and limits: [`docs/features/email-digest.md`](./docs/features/email-digest.md).
 

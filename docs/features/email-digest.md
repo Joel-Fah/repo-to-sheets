@@ -73,19 +73,27 @@ is never filler. Model text is escaped, `**bold**` becomes bold, and an `owner/r
 becomes a link only if that item is in the Activity data; any other link or markup is shown as
 plain text. `summarizeActivity` (the Insights summary) is unchanged.
 
-## Recipients: the Settings tab
+## Recipients: the Recipients tab
 
-Add one row to the **Settings** tab, below the repos:
+Who gets the digest lives in its own **Recipients** tab, not in Settings, so managing people never
+touches the repo list:
 
-| owner | repo | enabled |
+| name | email | enabled |
 |---|---|---|
-| Joel-Fah | repo-to-sheets | TRUE |
-| recipients | you@example.com, teammate@example.org | |
+| Joel Fah | joel@example.com | TRUE |
+| Teammate | teammate@example.org | FALSE |
 
-Column A is the word `recipients`; column B is the list, separated by commas, semicolons, spaces
-or new lines. Leave column C empty (the sync ignores the row because it is not `TRUE`). Entries that
-are not valid emails are skipped and reported in the popup; duplicates are removed; at most 20.
-With no valid recipients the send stops with a message saying what to add. Editing the cell needs no redeploy.
+- One address per row. `enabled` must be `TRUE` (a checkbox works); anything else switches the person
+  off without deleting the row.
+- `name` is for people reading the sheet; only the address is used to send.
+- Blank rows are ignored. Duplicate addresses are collapsed. At most 20 recipients.
+- An enabled row with a missing or invalid address is skipped and reported in the popup as
+  "row N: ...". Cells holding several addresses, or anything that isn't a plain address, count as invalid.
+- If the tab does not exist, **Send digest now** creates it with just the header row and stops with a
+  message saying what to add. With no enabled recipients nothing is sent.
+
+Edits take effect on the next send; nothing needs redeploying. (`PHASE5_INSTRUCTIONS.md` originally
+called for a `recipients` row in the Settings tab; a dedicated tab was chosen instead.)
 
 ## Sending, permission and quota
 
