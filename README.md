@@ -38,6 +38,10 @@ cards colored by `priority`, 48 cards across two repos.*
   second model is tried if the first is overloaded. See
   [`docs/features/gemini-insights.md`](./docs/features/gemini-insights.md) and
   [`docs/features/canvas-board.md`](./docs/features/canvas-board.md).
+- 🚧 **Phase 5 — HTML email digest** (built and unit tested; real-inbox check pending): a designed daily (or on-demand) email of what shipped, what is in
+  motion and what needs attention, with recommended actions derived from the data, priority chips in the
+  Kanban palette, and an "all quiet" version. **Repo Pulse → Send digest now** sends it on demand; recipients
+  are a row in the Settings tab. See [`docs/features/email-digest.md`](./docs/features/email-digest.md).
 
 ## How it works
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full data flow. Short
@@ -56,6 +60,11 @@ terminal (writing code, `clasp push`, git/PR workflow). Claude Code has
 no access to your Google account, so the browser steps can't be
 automated.
 
+## Email digest
+Add a `recipients` row to the Settings tab (`recipients | you@example.com, teammate@example.org`), then use
+**Repo Pulse → Send digest now**, or run `installDigestTrigger()` once from the Apps Script editor for a daily send.
+Details, design and limits: [`docs/features/email-digest.md`](./docs/features/email-digest.md).
+
 ## Tracked repos
 Configured in the Sheet's **Settings** tab — no code changes needed to
 add or remove a repo.
@@ -69,7 +78,7 @@ Two things worth knowing:
   tab by hand (see [`docs/features/sheet-service.md`](./docs/features/sheet-service.md)).
 
 ## How this was built
-The project was built in four phases, each a tracked issue and PR in this
+The project was built in five phases, each a tracked issue and PR in this
 repo, driven by written instructions that also served as the scope boundary
 for each step:
 
@@ -79,12 +88,14 @@ for each step:
 | 2 | [`PHASE2_INSTRUCTIONS.md`](./PHASE2_INSTRUCTIONS.md) | GitHub client + transformer |
 | 3 | [`PHASE3_INSTRUCTIONS.md`](./PHASE3_INSTRUCTIONS.md) | Activity upserts + sync orchestration |
 | 4 | [`PHASE4_INSTRUCTIONS.md`](./PHASE4_INSTRUCTIONS.md) | Gemini summaries, Insights tab, demo polish |
+| 5 | [`PHASE5_INSTRUCTIONS.md`](./PHASE5_INSTRUCTIONS.md) | HTML email digest |
 
 [`KICKOFF_PROMPT.md`](./KICKOFF_PROMPT.md) is the prompt that started the
 build. Architectural decisions are recorded as ADRs in
 [`docs/decisions/`](./docs/decisions/):
 [0001 — Apps Script over Node + Actions](./docs/decisions/0001-use-apps-script-over-node-actions.md),
-[0002 — Gemini summaries: API choice, model fallback, data-only links](./docs/decisions/0002-gemini-summaries-fallback-and-data-only-links.md).
+[0002 — Gemini summaries: API choice, model fallback, data-only links](./docs/decisions/0002-gemini-summaries-fallback-and-data-only-links.md),
+[0003 — Send the digest with MailApp](./docs/decisions/0003-send-the-digest-with-mailapp.md).
 Each shipped feature has a page under [`docs/features/`](./docs/features/).
 
 Manual checks against the real Sheet surfaced things the unit tests could
